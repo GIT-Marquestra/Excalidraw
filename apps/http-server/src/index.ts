@@ -8,6 +8,14 @@ const app = express();
 
 const port = 3001;
 
+declare global {
+    namespace Express {
+      interface Request {
+        userId?: string; // Add your expected type for `userId` here
+      }
+    }
+  }
+
 app.post("/signup", async (req: Request, res: Response) => {
     const parsedData = CreateUserSchema.safeParse(req.body)
     if(!parsedData.success){
@@ -18,7 +26,7 @@ app.post("/signup", async (req: Request, res: Response) => {
     } 
 
     try {
-        await Prisma.user.create({
+        const user = await Prisma.user.create({
             data: {
                 email: parsedData.data.email,
                 password: parsedData.data.password,
@@ -27,7 +35,7 @@ app.post("/signup", async (req: Request, res: Response) => {
         })
     
         res.json({
-            userId: 123123
+            userId: user.id
         })
     } catch (error) {
         console.error("Error in sign up logic: ", error)
@@ -35,33 +43,52 @@ app.post("/signup", async (req: Request, res: Response) => {
 
     
 })
-app.post("/signin", (req: Request, res: Response) => {
-    const data = SignInSchema.safeParse(req.body)
-    if(!data.success){
+app.post("/signin", async (req: Request, res: Response) => {
+    const parsedData = SignInSchema.safeParse(req.body)
+    if(!parsedData.success){
         res.json({
             message: "Incorrect inputs"
         })
         return 
     }
-    const userId = 1;
+    const user  = await Prisma.user.findFirst({
+        where: {
+            email: parsedData.data.email,
+            password: parsedData.data.password
+        }
+    })
     const token = jwt.sign({
-        userId
+        userId: user?.id
     }, JWT_SECRET)
     res.json({
         token
     })
 })
-app.post("/room", authMiddleware,  (req, res) => {
-    const data = CreateRoomSchema.safeParse(req.body)
-    if(!data.success){
+app.post("/room", authMiddleware,  async (req: Request, res: Response) => {
+    const userId  = req.userId
+    const parsedData = CreateRoomSchema.safeParse(req.body)
+    if(!parsedData.success){
         res.json({
             message: "Incorrect inputs "
         })
         return 
     }
-    res.json({
-        roomId: 123
+    if(!userId){
+        res.status(403).json({
+            message: "Middleware didnt sent the userId"
+        })
+        return 
+    }
+    const room = await Prisma.room.create({
+        data: {
+            slug: parsedData.data.name,
+            adminId: userId
+        }
     })
+    res.json({
+        roomId: room.id
+    })
+
 })
 
 app.listen(port, () => {
